@@ -12,6 +12,7 @@ import wifi
 import socketpool
 import ssl
 import adafruit_requests
+import json
 
 BLACK = 0x000000
 WHITE = 0xFFFFFF
@@ -24,6 +25,14 @@ BACKGROUND_COLOR = WHITE
 
 DISPLAY_WIDTH = 296
 DISPLAY_HEIGHT = 128
+
+PRIVATE_DATA_FILE = "private.txt"
+
+# Lyttleton Data:
+LATITUDE = -43.611
+LONGTITUDE = 172.717
+NIWA_URL = "https://api.niwa.co.nz/tides/data"
+
 
 
 def setup_display():
@@ -54,9 +63,9 @@ def setup_display():
         grayscale=True,
         refresh_time=1)
 
-    return( display_bus, display)
+    return(display_bus, display)
 
-def display_text( display, x, y, text ):
+def display_text(display, x, y, text):
     """
     Display the given text at point x, y on display
     """
@@ -90,20 +99,74 @@ def display_text( display, x, y, text ):
 
     time.sleep(180)
 
+def get_private_data(filename):
+    """
+    Read the private data from 'private.txt' and return the ssid, password anbd API key
+    """
+    with open(filename, mode='rt') as f:
+        ssid = f.readline().strip()
+        password = f.readline().strip()
+        api_key = f.readline().strip()
+
+    return (ssid, password, api_key)
+
+
+def connect_to_ssid(ssid, password):
+    """
+    Given an SSID and password connect to that Wifi service
+    """
+
+    try:
+        wifi.radio.connect(ssid=ssid,password=password)
+    except ConnectionError:
+        print("Connection to {} file file".format(ssid))
+        raise
+
+
+def get_tide_data(URL, apikey, lat, long):
+    """
+    Fetch tide data for Lyttleton from NIWA
+    """
+
+    pool = socketpool.SocketPool(wifi.radio)
+    request = adafruit_requests.Session(pool, ssl.create_default_context())
+
+
+    url = "{}?apikey={}&lat={}&long={}".format(URL, api_key, lat, long)
+
+    print("Fetching data with {}".format(url))
+    response = request.get(url)
+    print("Response code:",response.status_code)
+    return response.json()
+
+
+
 
 print("Tide Clock ")
 
+
+(ssid,password, api_key) = get_private_data(PRIVATE_DATA_FILE)
+print("Connecting to '{}' with pawword '{}'".format(ssid, password))
+
+connect_to_ssid(ssid, password)
+
+print("Connection to {} commplete".format( ssid ))
+print("my IP addr:", wifi.radio.ipv4_address)
+
+tide_data = get_tide_data(NIWA_URL, api_key, LATITUDE, LONGTITUDE)
+
+#print(tide_data)
+
+print(tide_data["values"][0]["time"])
 
 # Used to ensure the display is free in CircuitPython
 displayio.release_displays()
 
 display_bus, display = setup_display()
 
-#display_text( display, 5,10, "Tide Clock")
+display_text( display, 5,10, "Tide Clock")
 
-for network in wifi.radio.start_scanning_networks():
-    print(network, network.ssid, network.channel)
-wifi.radio.stop_scanning_networks()
+
 
 print('Done')
 
