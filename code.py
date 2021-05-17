@@ -35,7 +35,7 @@ TIDE_LINE_OFFSET = 20  # Tide lines are offset
 DATE_OFFSET = 170 # Position for date line
 
 
-SLEEP_TIME = 24*60 # Sleep for a day
+SLEEP_TIME = 24*60*60 # Sleep for a day
 
 # Lyttleton Data:
 LATITUDE = -43.611
@@ -215,7 +215,7 @@ for val in tide_vals:
         tide_high_low = "Low "
     else:
         tide_high_low = "High"
-    disp_string = "{} - {:02d}:{:02d}  {}m ".format(tide_high_low, tide_time.hour, tide_time.minute, height)
+    disp_string = "{} - {:02d}:{:02d}  {:04.2f}m ".format(tide_high_low, tide_time.hour, tide_time.minute, height)
     ypos += LINE_INCREMENT
     display_text( display, group, LINE_START + TIDE_LINE_OFFSET, ypos, disp_string, scale=2)
 
