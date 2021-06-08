@@ -35,7 +35,6 @@ TIDE_LINE_OFFSET = 20  # Tide lines are offset
 DATE_OFFSET = 170 # Position for date line
 
 
-SLEEP_TIME = 24*60*60 # Sleep for a day
 
 # Lyttleton Data:
 LATITUDE = -43.611
@@ -139,20 +138,21 @@ def get_utc_offset( URL, api_key ):
     """
     Use the timezone DB API to get the utc offset for our timezone
 
-    Returns the offset in hours:
+    Returns a tuple of the offset from UTC in hours and the local hour.
     """
     pool = socketpool.SocketPool(wifi.radio)
     request = adafruit_requests.Session(pool, ssl.create_default_context())
 
 
-    url = "{}?key={}&format=json&fields=gmtOffset&by=zone&zone=Pacific/Auckland".format(URL, api_key)
+    url = "{}?key={}&format=json&fields=gmtOffset,formatted&by=zone&zone=Pacific/Auckland".format(URL, api_key)
 
     print("Fetching data with {}".format(url))
     response = request.get(url)
     print("Response code:",response.status_code)
     js=response.json()
-
-    return js['gmtOffset']/3600
+    local_time = datetime.fromisoformat(js['formatted'])
+    print("Local time", local_time);
+    return (js['gmtOffset']/3600, local_time.hour)
 
 def convert_to_local_time( time_str, utc_offset ):
     """
@@ -184,8 +184,17 @@ print("my IP addr:", wifi.radio.ipv4_address)
 # Fetch Tide Data from NIWA for today
 tide_data = get_tide_data(NIWA_URL, niwa_api_key, LATITUDE, LONGTITUDE)
 
-utc_offset = get_utc_offset( TIMEZONE_DB_URL, timezone_db_api_key )
+utc_offset, local_hour = get_utc_offset( TIMEZONE_DB_URL, timezone_db_api_key )
 print( "UTC offset =", utc_offset )
+print( "Local hour = ", local_hour )
+
+# We want to sleep until around 3am. So calculate the number of seconds to sleep
+if local_hour < 3:
+    sleep_hour = 3-local_hour
+else:
+    sleep_hour = 27-local_hour;
+
+
 
 tide_vals = tide_data["values"]
 print(tide_vals)
@@ -226,9 +235,10 @@ update_display( display, group )
 
 
 print('Done, sleeping')
+print("Will sleep for {} hours".format(sleep_hour))
 
 # Create a an alarm that will trigger 24 hours  from now.
-time_alarm = alarm.time.TimeAlarm(monotonic_time=time.monotonic() + SLEEP_TIME)
+time_alarm = alarm.time.TimeAlarm(monotonic_time=time.monotonic() + sleep_hour*3600)
 # Exit the program, and then deep sleep until the alarm wakes us.
 alarm.exit_and_deep_sleep_until_alarms(time_alarm)
 # Does not return, so we never get here.
