@@ -171,67 +171,85 @@ def convert_to_local_time( time_str, utc_offset ):
 ####### Main Routine ##################
 
 print("Tide Clock ")
-
+sleep_hour = 0
+connected = False
 
 (ssid,password, niwa_api_key, timezone_db_api_key) = (secrets.secrets["ssid"], secrets.secrets["password"],
     secrets.secrets["niwa_api_key"], secrets.secrets["timezone_db_api_key"])
 print("Connecting to '{}' with password '{}'".format(ssid, password))
 
-connect_to_ssid(ssid, password)
-print("Connection to {} complete".format( ssid ))
-print("my IP addr:", wifi.radio.ipv4_address)
+try:
+    connect_to_ssid(ssid, password)
+    connected = True
+except:
+    print("Connection to {} failed".format(ssid))
+    sleep_hour = 1
+    connected = False
 
-# Fetch Tide Data from NIWA for today
-tide_data = get_tide_data(NIWA_URL, niwa_api_key, LATITUDE, LONGTITUDE)
+if connected:
+    print("Connection to {} complete".format( ssid ))
+    print("my IP addr:", wifi.radio.ipv4_address)
 
-utc_offset, local_hour = get_utc_offset( TIMEZONE_DB_URL, timezone_db_api_key )
-print( "UTC offset =", utc_offset )
-print( "Local hour = ", local_hour )
+    # Fetch Tide Data from NIWA for today
+    try:
+        tide_data = get_tide_data(NIWA_URL, niwa_api_key, LATITUDE, LONGTITUDE)
+    except:
+        connected=False
 
-# We want to sleep until around 3am. So calculate the number of seconds to sleep
-if local_hour < 3:
-    sleep_hour = 3-local_hour
-else:
-    sleep_hour = 27-local_hour;
-
-
-
-tide_vals = tide_data["values"]
-print(tide_vals)
-first_time = tide_vals[0]["time"]
-current_dt = convert_to_local_time(first_time, utc_offset)
-current_date = current_dt.ctime()
-print( "Date = ", current_date)
-
-
-displayio.release_displays()
-
-display_bus, display, group = setup_display()
+if connected:
+    try:
+        utc_offset, local_hour = get_utc_offset( TIMEZONE_DB_URL, timezone_db_api_key )
+        print( "UTC offset =", utc_offset )
+        print( "Local hour = ", local_hour )
+    except:
+        connect = False
 
 
-cd = current_date[:10]
-display_text( display, group, LINE_START,10, "Lyttleton")
-display_text( display, group, LINE_START+DATE_OFFSET, 10, cd)
-
-# Loop over all high and low tides and display a string for each one:
-ypos = 15
-for val in tide_vals:
-    tide_dt = convert_to_local_time( val["time"], utc_offset )
-    tide_time = tide_dt.time()
-    height = float(val["value"])
-    tide_hi_low = ""
-    if height < 1.0:
-        tide_high_low = "Low "
-    else:
-        tide_high_low = "High"
-    disp_string = "{} - {:02d}:{:02d}  {:04.2f}m ".format(tide_high_low, tide_time.hour, tide_time.minute, height)
-    ypos += LINE_INCREMENT
-    display_text( display, group, LINE_START + TIDE_LINE_OFFSET, ypos, disp_string, scale=2)
+    if sleep_hour == 0:
+        # We want to sleep until around 3am. So calculate the number of seconds to sleep
+        if local_hour < 3:
+            sleep_hour = 3-local_hour
+        else:
+            sleep_hour = 27-local_hour;
 
 
 
+    tide_vals = tide_data["values"]
+    print(tide_vals)
+    first_time = tide_vals[0]["time"]
+    current_dt = convert_to_local_time(first_time, utc_offset)
+    current_date = current_dt.ctime()
+    print( "Date = ", current_date)
 
-update_display( display, group )
+
+    displayio.release_displays()
+
+    display_bus, display, group = setup_display()
+
+
+    cd = current_date[:10]
+    display_text( display, group, LINE_START,10, "Lyttleton")
+    display_text( display, group, LINE_START+DATE_OFFSET, 10, cd)
+
+    # Loop over all high and low tides and display a string for each one:
+    ypos = 15
+    for val in tide_vals:
+        tide_dt = convert_to_local_time( val["time"], utc_offset )
+        tide_time = tide_dt.time()
+        height = float(val["value"])
+        tide_hi_low = ""
+        if height < 1.0:
+            tide_high_low = "Low "
+        else:
+            tide_high_low = "High"
+        disp_string = "{} - {:02d}:{:02d}  {:04.2f}m ".format(tide_high_low, tide_time.hour, tide_time.minute, height)
+        ypos += LINE_INCREMENT
+        display_text( display, group, LINE_START + TIDE_LINE_OFFSET, ypos, disp_string, scale=2)
+
+
+
+
+    update_display( display, group )
 
 
 print('Done, sleeping')
