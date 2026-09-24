@@ -132,6 +132,8 @@ def get_tide_data(URL, api_key, lat, long):
     print("Fetching data with {}".format(url))
     response = request.get(url)
     print("Response code:",response.status_code)
+    if response.status_code != 200:
+        raise RuntimeError("NIWA request failed with status {}".format(response.status_code))
     return response.json()
 
 def get_utc_offset( URL, api_key ):
@@ -193,7 +195,12 @@ if connected:
     # Fetch Tide Data from NIWA for today
     try:
         tide_data = get_tide_data(NIWA_URL, niwa_api_key, LATITUDE, LONGTITUDE)
-    except:
+        tide_vals = tide_data["values"]
+        if not tide_vals:
+            raise ValueError("No tide values returned")
+    except Exception as e:
+        print("Fetching tide data failed:", e)
+        sleep_hour = 1
         connected=False
 
 if connected:
@@ -201,10 +208,12 @@ if connected:
         utc_offset, local_hour = get_utc_offset( TIMEZONE_DB_URL, timezone_db_api_key )
         print( "UTC offset =", utc_offset )
         print( "Local hour = ", local_hour )
-    except:
-        connect = False
+    except Exception as e:
+        print("Fetching UTC offset failed:", e)
+        sleep_hour = 1
+        connected = False
 
-
+if connected:
     if sleep_hour == 0:
         # We want to sleep until around 3am. So calculate the number of seconds to sleep
         if local_hour < 3:
@@ -214,7 +223,6 @@ if connected:
 
 
 
-    tide_vals = tide_data["values"]
     print(tide_vals)
     first_time = tide_vals[0]["time"]
     current_dt = convert_to_local_time(first_time, utc_offset)
