@@ -1,20 +1,16 @@
-import time, gc, os
+import time
 import alarm
-import adafruit_dotstar
 import board
-import feathers2
 import displayio
 import adafruit_il0373
 import terminalio
 import busio
 from adafruit_display_text import label
-import ipaddress
 import wifi
 import socketpool
 import ssl
 import adafruit_requests
-import json
-from adafruit_datetime import datetime, date, timezone, timedelta
+from adafruit_datetime import datetime, timedelta
 import secrets
 
 BLACK = 0x000000
@@ -40,7 +36,7 @@ DATE_OFFSET = 170 # Position for date line
 LATITUDE = -43.611
 LONGTITUDE = 172.717
 NIWA_URL = "https://api.niwa.co.nz/tides/data"
-TIMEZONE_DB_URL = "http://api.timezonedb.com/v2.1/get-time-zone"
+TIMEZONE_DB_URL = "https://api.timezonedb.com/v2.1/get-time-zone"
 
 
 def setup_display():
@@ -70,7 +66,7 @@ def setup_display():
 
 
     # Create a display group for our screen objects
-    g = displayio.Group(max_size=10)
+    g = displayio.Group()
 
     # Set a background
     background_bitmap = displayio.Bitmap(DISPLAY_WIDTH, DISPLAY_HEIGHT, 1)
@@ -91,7 +87,7 @@ def display_text(display,group, x, y, text, scale=2):
 
 
     # Draw simple text using the built-in font into a displayio group
-    text_group = displayio.Group(max_size=10, scale=int(scale), x=x, y=y)
+    text_group = displayio.Group(scale=int(scale), x=x, y=y)
     text_area = label.Label(terminalio.FONT, text=text, color=FOREGROUND_COLOR)
     text_group.append(text_area)  # Add this text to the text group
     group.append(text_group)
@@ -129,7 +125,7 @@ def get_tide_data(URL, api_key, lat, long):
 
     url = "{}?apikey={}&lat={}&long={}&numberOfDays=1".format(URL, api_key, lat, long)
 
-    print("Fetching data with {}".format(url))
+    print("Fetching tide data from {}".format(URL))
     response = request.get(url)
     print("Response code:",response.status_code)
     if response.status_code != 200:
@@ -148,7 +144,7 @@ def get_utc_offset( URL, api_key ):
 
     url = "{}?key={}&format=json&fields=gmtOffset,formatted&by=zone&zone=Pacific/Auckland".format(URL, api_key)
 
-    print("Fetching data with {}".format(url))
+    print("Fetching UTC offset from {}".format(URL))
     response = request.get(url)
     print("Response code:",response.status_code)
     js=response.json()
@@ -169,6 +165,22 @@ def convert_to_local_time( time_str, utc_offset ):
     tide_dt_local = tide_dt_utc + UTC_offset
     return tide_dt_local
 
+def tide_labels( tide_vals ):
+    """
+    Label each tide "High" or "Low " by comparing its height with the tides either side
+    """
+    heights = [float(val["value"]) for val in tide_vals]
+    labels = []
+    for i, height in enumerate(heights):
+        neighbours = heights[max(0, i-1):i] + heights[i+1:i+2]
+        if neighbours:
+            is_high = height > max(neighbours)
+        else:
+            # Only one tide, so fall back to a height threshold
+            is_high = height >= 1.0
+        labels.append("High" if is_high else "Low ")
+    return labels
+
 
 ####### Main Routine ##################
 
@@ -178,12 +190,12 @@ connected = False
 
 (ssid,password, niwa_api_key, timezone_db_api_key) = (secrets.secrets["ssid"], secrets.secrets["password"],
     secrets.secrets["niwa_api_key"], secrets.secrets["timezone_db_api_key"])
-print("Connecting to '{}' with password '{}'".format(ssid, password))
+print("Connecting to '{}'".format(ssid))
 
 try:
     connect_to_ssid(ssid, password)
     connected = True
-except:
+except Exception:
     print("Connection to {} failed".format(ssid))
     sleep_hour = 1
     connected = False
@@ -223,41 +235,37 @@ if connected:
 
 
 
-    print(tide_vals)
-    first_time = tide_vals[0]["time"]
-    current_dt = convert_to_local_time(first_time, utc_offset)
-    current_date = current_dt.ctime()
-    print( "Date = ", current_date)
+    try:
+        print(tide_vals)
+        first_time = tide_vals[0]["time"]
+        current_dt = convert_to_local_time(first_time, utc_offset)
+        current_date = current_dt.ctime()
+        print( "Date = ", current_date)
 
 
-    displayio.release_displays()
+        displayio.release_displays()
 
-    display_bus, display, group = setup_display()
-
-
-    cd = current_date[:10]
-    display_text( display, group, LINE_START,10, "Lyttleton")
-    display_text( display, group, LINE_START+DATE_OFFSET, 10, cd)
-
-    # Loop over all high and low tides and display a string for each one:
-    ypos = 15
-    for val in tide_vals:
-        tide_dt = convert_to_local_time( val["time"], utc_offset )
-        tide_time = tide_dt.time()
-        height = float(val["value"])
-        tide_hi_low = ""
-        if height < 1.0:
-            tide_high_low = "Low "
-        else:
-            tide_high_low = "High"
-        disp_string = "{} - {:02d}:{:02d}  {:04.2f}m ".format(tide_high_low, tide_time.hour, tide_time.minute, height)
-        ypos += LINE_INCREMENT
-        display_text( display, group, LINE_START + TIDE_LINE_OFFSET, ypos, disp_string, scale=2)
+        display_bus, display, group = setup_display()
 
 
+        cd = current_date[:10]
+        display_text( display, group, LINE_START,10, "Lyttleton")
+        display_text( display, group, LINE_START+DATE_OFFSET, 10, cd)
 
+        # Loop over all high and low tides and display a string for each one:
+        ypos = 15
+        for val, tide_high_low in zip(tide_vals, tide_labels(tide_vals)):
+            tide_dt = convert_to_local_time( val["time"], utc_offset )
+            tide_time = tide_dt.time()
+            height = float(val["value"])
+            disp_string = "{} - {:02d}:{:02d}  {:04.2f}m ".format(tide_high_low, tide_time.hour, tide_time.minute, height)
+            ypos += LINE_INCREMENT
+            display_text( display, group, LINE_START + TIDE_LINE_OFFSET, ypos, disp_string, scale=2)
 
-    update_display( display, group )
+        update_display( display, group )
+    except Exception as e:
+        print("Updating display failed:", e)
+        sleep_hour = 1
 
 
 print('Done, sleeping')
